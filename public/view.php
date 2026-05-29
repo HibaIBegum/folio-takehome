@@ -27,6 +27,23 @@ if (!$doc) {
     exit;
 }
 
+// publish_at is stored as UTC; compare against current UTC time
+if (!empty($doc['publish_at'])) {
+    $publishAt = new DateTimeImmutable($doc['publish_at'], new DateTimeZone('UTC'));
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    if ($now < $publishAt) {
+        render_header('Not yet available');
+        ?>
+        <div class="centered-message">
+            <h1>Not yet available</h1>
+            <p>This document has not been published yet. Please check back later.</p>
+        </div>
+        <?php
+        render_footer();
+        exit;
+    }
+}
+
 render_header($doc['title']);
 ?>
 

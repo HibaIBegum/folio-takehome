@@ -44,6 +44,51 @@ test('seeded share link resolves to the seeded document', function () {
     assert_true($row['title'] === 'Welcome Packet', 'unexpected title: ' . var_export($row['title'], true));
 });
 
+test('document with publish_at in the future is not yet available', function () {
+    $staff = current_staff();
+    $futureUtc = (new DateTimeImmutable('+1 hour', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+    $stmt = db()->prepare('INSERT INTO documents (title, body, created_by, publish_at) VALUES (?, ?, ?, ?)');
+    $stmt->execute(['Future Doc', 'body', $staff['id'], $futureUtc]);
+    $docId = (int) db()->lastInsertId();
+
+    $stmt = db()->prepare('SELECT publish_at FROM documents WHERE id = ?');
+    $stmt->execute([$docId]);
+    $row = $stmt->fetch();
+
+    $publishAt = new DateTimeImmutable($row['publish_at'], new DateTimeZone('UTC'));
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    assert_true($now < $publishAt, 'expected publish_at to be in the future');
+});
+
+test('document with publish_at in the past is available', function () {
+    $staff = current_staff();
+    $pastUtc = (new DateTimeImmutable('-1 hour', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
+    $stmt = db()->prepare('INSERT INTO documents (title, body, created_by, publish_at) VALUES (?, ?, ?, ?)');
+    $stmt->execute(['Past Doc', 'body', $staff['id'], $pastUtc]);
+    $docId = (int) db()->lastInsertId();
+
+    $stmt = db()->prepare('SELECT publish_at FROM documents WHERE id = ?');
+    $stmt->execute([$docId]);
+    $row = $stmt->fetch();
+
+    $publishAt = new DateTimeImmutable($row['publish_at'], new DateTimeZone('UTC'));
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    assert_true($now >= $publishAt, 'expected publish_at to be in the past');
+});
+
+test('document with null publish_at is immediately available', function () {
+    $staff = current_staff();
+    $stmt = db()->prepare('INSERT INTO documents (title, body, created_by) VALUES (?, ?, ?)');
+    $stmt->execute(['Immediate Doc', 'body', $staff['id']]);
+    $docId = (int) db()->lastInsertId();
+
+    $stmt = db()->prepare('SELECT publish_at FROM documents WHERE id = ?');
+    $stmt->execute([$docId]);
+    $row = $stmt->fetch();
+
+    assert_true(empty($row['publish_at']), 'expected publish_at to be null');
+});
+
 test('search by partial title returns matches and excludes non-matches', function () {
     $staff = current_staff();
 

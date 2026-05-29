@@ -9,18 +9,28 @@ $error = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['title'] ?? '');
     $body = trim($_POST['body'] ?? '');
+    $publishAtInput = trim($_POST['publish_at'] ?? '');
 
     if ($title === '' || $body === '') {
         $error = 'Title and body are required.';
     } else {
+        // Convert Chicago-local input to UTC for storage, or null if not set
+        $publishAtUtc = null;
+        if ($publishAtInput !== '') {
+            $dt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $publishAtInput, new DateTimeZone('America/Chicago'));
+            if ($dt !== false) {
+                $publishAtUtc = $dt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+            }
+        }
+
         $stmt = db()->prepare('
-            INSERT INTO documents (title, body, created_by)
-            VALUES (?, ?, ?)
+            INSERT INTO documents (title, body, created_by, publish_at)
+            VALUES (?, ?, ?, ?)
         ');
-        $stmt->execute([$title, $body, $staff['id']]);
+        $stmt->execute([$title, $body, $staff['id'], $publishAtUtc]);
         $docId = (int) db()->lastInsertId();
 
-        audit_log('create', 'document', $docId, ['title' => $title]);
+        audit_log('create', 'document', $docId, ['title' => $title, 'publish_at' => $publishAtUtc]);
 
         header('Location: /admin.php?created=' . $docId);
         exit;
@@ -34,7 +44,7 @@ if ($search !== '') {
         FROM documents d
         JOIN staff s ON s.id = d.created_by
         WHERE d.title LIKE ?
-        ORDER BY d.created_at DESC
+        ORDER BY d.id DESC
     ');
     $stmt->execute(['%' . $search . '%']);
     $docs = $stmt->fetchAll();
@@ -43,7 +53,7 @@ if ($search !== '') {
         SELECT d.*, s.name AS creator_name
         FROM documents d
         JOIN staff s ON s.id = d.created_by
-        ORDER BY d.created_at DESC
+        ORDER BY d.id DESC
     ')->fetchAll();
 }
 
@@ -72,6 +82,10 @@ render_header('Admin', $staff);
             <label for="body">Body</label>
             <textarea id="body" name="body" required></textarea>
         </div>
+        <div class="form-field">
+            <label for="publish_at">Schedule publish — Chicago time (CT) <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+            <input type="datetime-local" id="publish_at" name="publish_at">
+        </div>
         <button type="submit" class="btn">Create document</button>
     </form>
 </section>
@@ -98,6 +112,7 @@ render_header('Admin', $staff);
                     <th>Title</th>
                     <th>Creator</th>
                     <th>Created</th>
+                    <th>Publishes at (CT)</th>
                     <th></th>
                 </tr>
             </thead>
@@ -108,6 +123,7 @@ render_header('Admin', $staff);
                         <td><?= h($d['title']) ?></td>
                         <td><?= h($d['creator_name']) ?></td>
                         <td><?= h($d['created_at']) ?></td>
+                        <td><?= $d['publish_at'] ? h((new DateTimeImmutable($d['publish_at'], new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('America/Chicago'))->format('Y-m-d H:i T')) : '<span style="color:var(--text-muted)">immediate</span>' ?></td>
                         <td><a href="/share.php?doc=<?= (int) $d['id'] ?>" class="btn-link">Create share →</a></td>
                     </tr>
                 <?php endforeach ?>
