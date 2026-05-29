@@ -23,14 +23,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // Generate slug: slugify title + 4 random hex chars
+        $base = strtolower(trim(preg_replace('/[^a-z0-9]+/i', '-', $title), '-'));
+        $slug = $base . '-' . substr(random_token(2), 0, 4);
+
         $stmt = db()->prepare('
-            INSERT INTO documents (title, body, created_by, publish_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO documents (title, body, created_by, publish_at, slug)
+            VALUES (?, ?, ?, ?, ?)
         ');
-        $stmt->execute([$title, $body, $staff['id'], $publishAtUtc]);
+        $stmt->execute([$title, $body, $staff['id'], $publishAtUtc, $slug]);
         $docId = (int) db()->lastInsertId();
 
-        audit_log('create', 'document', $docId, ['title' => $title, 'publish_at' => $publishAtUtc]);
+        audit_log('create', 'document', $docId, ['title' => $title, 'publish_at' => $publishAtUtc, 'slug' => $slug]);
 
         header('Location: /admin.php?created=' . $docId);
         exit;
@@ -110,6 +114,7 @@ render_header('Admin', $staff);
                 <tr>
                     <th>ID</th>
                     <th>Title</th>
+                    <th>Slug</th>
                     <th>Creator</th>
                     <th>Created</th>
                     <th>Publishes at (CT)</th>
@@ -121,6 +126,7 @@ render_header('Admin', $staff);
                     <tr>
                         <td class="id">#<?= (int) $d['id'] ?></td>
                         <td><?= h($d['title']) ?></td>
+                        <td class="id"><?= $d['slug'] ? h($d['slug']) : '<span style="color:var(--text-muted)">—</span>' ?></td>
                         <td><?= h($d['creator_name']) ?></td>
                         <td><?= h($d['created_at']) ?></td>
                         <td><?= $d['publish_at'] ? h((new DateTimeImmutable($d['publish_at'], new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('America/Chicago'))->format('Y-m-d H:i T')) : '<span style="color:var(--text-muted)">immediate</span>' ?></td>
