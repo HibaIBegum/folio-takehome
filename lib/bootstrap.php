@@ -10,8 +10,46 @@ function db(): PDO {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
         $pdo->exec('PRAGMA foreign_keys = ON');
+        run_migrations($pdo);
     }
     return $pdo;
+}
+
+function run_migrations(PDO $pdo): void {
+    // If the base schema hasn't been loaded yet (e.g. during seed.php before
+    // schema.sql runs), skip — migrations will fire on the next db() call.
+    $schemaReady = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='documents'")->fetch();
+    if ($schemaReady === false) {
+        return;
+    }
+
+    $pdo->exec('
+        CREATE TABLE IF NOT EXISTS migrations_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL UNIQUE,
+            ran_at TEXT NOT NULL DEFAULT (datetime(\'now\'))
+        )
+    ');
+
+    $files = glob(__DIR__ . '/../migrations/*.sql');
+    if ($files === false || $files === []) {
+        return;
+    }
+    sort($files);
+
+    $stmt = $pdo->prepare('SELECT filename FROM migrations_log WHERE filename = ?');
+    $insert = $pdo->prepare('INSERT INTO migrations_log (filename) VALUES (?)');
+
+    foreach ($files as $file) {
+        $name = basename($file);
+        $stmt->execute([$name]);
+        if ($stmt->fetch() !== false) {
+            continue;
+        }
+        $sql = file_get_contents($file);
+        $pdo->exec($sql);
+        $insert->execute([$name]);
+    }
 }
 
 function current_staff(): array {
