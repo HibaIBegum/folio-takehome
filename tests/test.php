@@ -112,5 +112,34 @@ test('search by partial title returns matches and excludes non-matches', functio
     assert_true(!in_array('Beta Summary', $titles), 'expected Beta Summary to be excluded');
 });
 
+test('share link with matching slug and token resolves to document; wrong slug returns nothing', function () {
+    $staff = current_staff();
+
+    $slug = 'test-slug-ab12';
+    $stmt = db()->prepare('INSERT INTO documents (title, body, created_by, slug) VALUES (?, ?, ?, ?)');
+    $stmt->execute(['Slug Test Doc', 'body', $staff['id'], $slug]);
+    $docId = (int) db()->lastInsertId();
+
+    $token = random_token();
+    $stmt = db()->prepare('INSERT INTO shares (document_id, token, recipient_email) VALUES (?, ?, ?)');
+    $stmt->execute([$docId, $token, 'r@example.com']);
+
+    // Correct slug + token resolves
+    $stmt = db()->prepare('
+        SELECT d.title FROM shares s
+        JOIN documents d ON d.id = s.document_id
+        WHERE s.token = ? AND d.slug = ?
+    ');
+    $stmt->execute([$token, $slug]);
+    $row = $stmt->fetch();
+    assert_true($row !== false, 'expected document to resolve with correct slug and token');
+    assert_true($row['title'] === 'Slug Test Doc', 'unexpected title: ' . var_export($row['title'], true));
+
+    // Wrong slug returns nothing
+    $stmt->execute([$token, 'wrong-slug-0000']);
+    $row = $stmt->fetch();
+    assert_true($row === false, 'expected no result with wrong slug');
+});
+
 echo "\n{$pass} passed, {$fail} failed.\n";
 exit($fail > 0 ? 1 : 0);
